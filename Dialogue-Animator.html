@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dialogue Animator v5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #17181d;
+  --surf:    #1e1f26;
+  --surf2:   #272832;
+  --surf3:   #313240;
+  --border:  #35363f;
+  --accent:  #4f8eff;
+  --blue:    #9c90ff;
+  --warn:    #e3a552;
+  --danger:  #ee6b6b;
+  --text:    #e7e8ec;
+  --muted:   #8b8d99;
+  --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+body {
+  font-family: var(--font-ui);
+  background: var(--bg); color: var(--text);
+  height: 100vh; display: flex; flex-direction: column;
+  overflow: hidden; font-size: 13px; user-select: none;
+}
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── TOP NAV ── */
+#topnav {
+  background: var(--surf); border-bottom: 1px solid var(--border);
+  height: 44px; display: flex; align-items: center;
+  padding: 0 14px; flex-shrink: 0;
+}
+.logo {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  letter-spacing: -.01em;
+  padding-right: 14px; border-right: 1px solid var(--border);
+  line-height: 1.25; white-space: nowrap;
+}
+.ng {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 14px; border-right: 1px solid var(--border); height: 100%;
+}
+.ng:last-child { border-right: none; margin-left: auto; }
+.nlabel { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+
+/* Shared inputs */
+select, input[type=number], input[type=text] {
+  padding: 4px 8px; background: var(--surf2); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-ui); font-size: 11px; border-radius: 6px;
+}
+select { cursor: pointer; }
+select:focus, input:focus { outline: none; border-color: var(--accent); }
+input[type=number] { width: 54px; }
+input[type=text]   { width: 100%; }
+input[type=range]  { accent-color: var(--accent); cursor: pointer; }
+input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border); background: var(--surf2); border-radius: 3px; cursor: pointer; padding: 2px; }
+
+/* Buttons */
+.btn {
+  padding: 6px 13px; border: 1px solid var(--border); background: var(--surf2);
+  color: var(--text); font-family: var(--font-ui); font-size: 11.5px; font-weight: 500;
+  cursor: pointer; border-radius: 6px; transition: background .12s, border-color .12s, color .12s; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--surf3); border-color: #454650; }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.g  { background: var(--accent); border-color: var(--accent); color: #12131a; font-weight: 600; }
+.btn.g:hover:not(:disabled) { background: #6ba1ff; border-color: #6ba1ff; }
+.btn.b  { background: rgba(156,144,255,.12); border-color: rgba(156,144,255,.4); color: var(--blue); }
+.btn.b:hover:not(:disabled) { background: rgba(156,144,255,.2); }
+.btn.r  { background: transparent; border-color: var(--border); color: var(--muted); }
+.btn.r:hover:not(:disabled) { background: rgba(238,107,107,.12); border-color: var(--danger); color: var(--danger); }
+.btn.lg { padding: 8px 20px; font-size: 13px; }
+
+/* Toggle switch */
+.sw { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
+.sw input { opacity: 0; width: 0; height: 0; }
+.sw-t {
+  position: absolute; inset: 0; background: var(--surf2);
+  border: 1px solid var(--border); border-radius: 18px; cursor: pointer; transition: background .18s;
+}
+.sw-t::before {
+  content: ''; position: absolute; width: 12px; height: 12px;
+  left: 2px; top: 2px; background: var(--muted); border-radius: 50%;
+  transition: transform .18s, background .18s;
+}
+.sw input:checked + .sw-t { background: rgba(79,142,255,.18); border-color: var(--accent); }
+.sw input:checked + .sw-t::before { transform: translateX(16px); background: var(--accent); }
+.sw-row { display: flex; align-items: center; gap: 7px; }
+.sw-row span { font-size: 11px; color: var(--muted); }
+
+/* ── MAIN ── */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── LEFT PANEL — SCRIPT ── */
+#left-panel {
+  width: 272px; background: var(--surf); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+}
+.ph {
+  padding: 10px 12px 9px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.ph h3 { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+
+#script-meta {
+  padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 7px; flex-shrink: 0;
+}
+.meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.meta-label { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.est { font-size: 10px; color: var(--warn); font-family: var(--font-mono); }
+
+/* ── CENTER ── */
+#center {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; align-items: center; min-width: 0;
+}
+#preview-wrap {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  background: #080809; width: 100%; overflow: hidden; position: relative;
+}
+
+/* ── PREVIEW ── */
+#preview {
+  position: relative; width: 854px; height: 480px;
+  background: #000; overflow: hidden; flex-shrink: 0;
+  box-shadow: 0 0 40px rgba(0,0,0,.85), 0 0 0 1px var(--border);
+}
+#flash-ov {
+  position: absolute; inset: 0; background: #fff;
+  opacity: 0; pointer-events: none; z-index: 100; transition: opacity .04s;
+}
+#bg-layer { position: absolute; inset: 0; background-size: cover; background-position: center; z-index: 0; }
+#preview.shake { animation: pShake .28s ease; }
+@keyframes pShake {
+  0%,100%{transform:none} 20%{transform:translate(-5px,2px)} 40%{transform:translate(5px,-2px)}
+  60%{transform:translate(-3px,3px)} 80%{transform:translate(3px,-3px)}
+}
+#prog-bar  { position:absolute; top:0; left:0; right:0; height:3px; background:var(--border); z-index:50; }
+#prog-fill { height:100%; background:var(--accent); transition:width .25s; width:0; }
+#line-ctr  {
+  position:absolute; top:7px; right:10px; font-size:10px; color:var(--muted); z-index:50;
+  background:rgba(0,0,0,.55); padding:2px 7px; border-radius:4px; font-family:var(--font-mono);
+}
+
+/* ── DIALOGUE BOX ── */
+#dial-wrap {
+  position: absolute;
+  z-index: 10;
+  /* position controlled by JS via left/bottom */
+}
+
+#dial-bar {
+  position: relative;
+  background: rgba(0,0,0,.93);
+  border: 3px solid #fff;
+  display: flex; align-items: center;
+  padding: 10px 14px; gap: 12px;
+  width: 100%;
+}
+#dial-text {
+  display: flex; align-items: center;
+}
+
+/* Box style: bar = full-width strip glued, float = inset rectangle */
+#dial-wrap.style-bar {
+  left: 0; right: 0; bottom: 0;
+  width: 100%;
+}
+#dial-wrap.style-bar #dial-bar {
+  border-left: none; border-right: none; border-bottom: none; border-radius: 0;
+}
+
+#dial-wrap.style-float {
+  /* position via inline style from JS sliders */
+}
+#dial-wrap.style-float #dial-bar {
+  border-radius: 3px;
+}
+
+/* Speaker name tab */
+#spk-name {
+  position: absolute; top: -26px; left: 12px;
+  background: #000; border: 2px solid #fff;
+  padding: 2px 14px; font-size: 12px; font-weight: bold;
+  font-family: var(--font-mono); color: #fff;
+  white-space: nowrap; opacity: 0; transition: opacity .15s;
+}
+#spk-name.show { opacity: 1; }
+
+/* Portrait box */
+#portrait-box {
+  flex-shrink: 0; border: 2px solid #fff; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; background: #080808;
+}
+#portrait-box img { width:100%; height:100%; object-fit:cover; image-rendering:pixelated; }
+#portrait-ph { color:#2a2a2a; font-size:9px; text-align:center; line-height:1.5; }
+
+/* Dialogue text */
+#dial-text {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 15px; color: #fff; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+  overflow: hidden;
+  padding: 0 4px;
+  /* no flex here — let txt-out and #cur sit inline naturally */
+}
+#txt-out {
+  display: inline;
+}
+
+/* ── BLOCK LIST (left panel) ── */
+#block-list {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0;
+}
+.blk-item {
+  display: flex; align-items: center; gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surf2); cursor: pointer;
+  transition: background .1s; flex-shrink: 0; position: relative;
+}
+.blk-item:hover { background: var(--surf3); }
+.blk-item.active { background: rgba(79,142,255,.12); border-left: 2px solid var(--accent); }
+.blk-item.done   { opacity: .38; }
+.blk-num {
+  width: 24px; text-align: center; font-size: 9px; font-family: var(--font-mono);
+  color: var(--border); flex-shrink: 0; padding: 8px 0;
+}
+.blk-txt {
+  flex: 1; font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 8px 4px 8px 0;
+}
+.blk-del {
+  width: 22px; text-align: center; font-size: 11px;
+  color: var(--border); padding: 8px 4px; flex-shrink: 0;
+  transition: color .1s;
+}
+.blk-del:hover { color: var(--danger); }
+.blk-add-btn {
+  margin: 6px; padding: 5px;
+  border: 1px dashed var(--border); background: none;
+  color: var(--muted); font-size: 11px; border-radius: 6px;
+  cursor: pointer; text-align: center; transition: border-color .1s, color .1s;
+  font-family: var(--font-ui);
+}
+.blk-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+#cur {
+  display: inline-block;
+  width: 2px; height: 1em;
+  background: #fff;
+  vertical-align: text-bottom;
+  animation: curBlink .65s step-end infinite;
+  opacity: 0;
+  margin-left: 1px;
+}
+#cur.on { opacity: 1; }
+@keyframes curBlink { 50%{opacity:0} }
+
+#next-arr {
+  position:absolute; bottom:12px; right:12px;
+  border-left:7px solid transparent; border-right:7px solid transparent; border-top:10px solid #fff;
+  animation:arrBounce .5s ease-in-out infinite alternate;
+  opacity:0; transition:opacity .18s;
+}
+#next-arr.show { opacity:1; }
+@keyframes arrBounce { to{transform:translateY(4px)} }
+
+/* Text fx */
+.fx-shake   { display:inline-block; animation:fxS .08s ease-in-out infinite alternate; }
+.fx-wave    { display:inline-block; animation:fxW .45s ease-in-out infinite alternate; }
+.fx-rainbow { display:inline-block; animation:fxR 1s linear infinite; color:red; }
+.fx-big     { display:inline-block; font-size:1.35em; line-height:1; vertical-align:middle; }
+.fx-small   { display:inline-block; font-size:.75em; }
+@keyframes fxS { from{transform:translate(-1px,-1px) rotate(-.5deg)} to{transform:translate(1px,1px) rotate(.5deg)} }
+@keyframes fxW { from{transform:translateY(0)} to{transform:translateY(-4px)} }
+@keyframes fxR { to{filter:hue-rotate(360deg)} }
+.talking { animation:spkTalk .12s step-end infinite; }
+@keyframes spkTalk { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2px)} }
+
+/* ── PLAYBACK BAR ── */
+#playback-bar {
+  background: var(--surf); border-top: 1px solid var(--border);
+  padding: 8px 14px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.pb-g { display:flex; align-items:center; gap:7px; padding-right:12px; border-right:1px solid var(--border); }
+.pb-g:last-child { border-right:none; margin-left:auto; }
+.pb-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; white-space:nowrap; }
+#status-txt { font-size:11px; color:var(--muted); }
+#status-txt.active { color:var(--accent); }
+#status-txt.done   { color:var(--blue); }
+
+/* ── RIGHT PANEL ── */
+#right-panel {
+  width: 256px; background: var(--surf); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+}
+.rps { border-bottom: 1px solid var(--border); padding: 12px; }
+.rps h3 { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 10px; }
+.rf { margin-bottom: 9px; }
+.rf label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+.upbtn {
+  display:block; width:100%; padding:7px;
+  border:1px dashed var(--border); background:var(--bg); color:var(--muted);
+  font-size:11px; text-align:center; cursor:pointer; border-radius:6px;
+  font-family:var(--font-ui); transition:border-color .15s, color .15s;
+}
+.upbtn:hover { border-color:var(--accent); color:var(--accent); }
+.upbtn input[type=file] { display:none; }
+.thumb {
+  margin-top:5px; height:52px; background:var(--bg); border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:4px;
+}
+.thumb img { max-width:100%; max-height:100%; object-fit:contain; image-rendering:pixelated; }
+.thumb span { font-size:10px; color:var(--border); }
+
+/* Expression grid */
+#expr-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
+.eslot {
+  aspect-ratio:1; background:var(--bg); border:1px solid var(--border);
+  border-radius:5px; overflow:hidden; cursor:pointer; position:relative;
+  display:flex; align-items:center; justify-content:center; transition:border-color .12s;
+}
+.eslot:hover { border-color:#555; }
+.eslot.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.eslot img { width:100%; height:100%; object-fit:cover; image-rendering:pixelated; display:block; }
+.eslot .enum { font-size:20px; color:var(--border); pointer-events:none; }
+.eslot .elbl { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,.7); font-size:8px; color:#aaa; text-align:center; padding:1px; pointer-events:none; }
+
+.color-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.color-row .clbl { font-size:10px; color:var(--muted); }
+
+/* Layout toggles section */
+.layout-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.layout-row:last-child { border-bottom: none; }
+.layout-row .lr-label { font-size: 11px; color: var(--text); }
+.layout-row .lr-sub   { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.sub-option {
+  margin-top: 8px; padding: 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+  display: none;
+}
+.sub-option.show { display: block; }
+.sub-option label { font-size: 10px; color: var(--muted); display: block; margin-bottom: 5px; }
+
+/* XY sliders */
+.xy-row { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; }
+.xy-row .xy-label { font-size: 10px; color: var(--muted); width: 14px; }
+.xy-row input[type=range] { flex: 1; }
+.xy-row .xy-val { font-size: 10px; color: var(--text); min-width: 28px; text-align: right; }
+
+/* ── PRESENTER ── */
+#presenter {
+  display: none; position: fixed; inset: 0; z-index: 9999;
+  background: #000; justify-content: center; align-items: center;
+}
+#presenter.on { display: flex; }
+#pres-stage {
+  position: relative;
+  /* sized by JS */
+}
+/* The preview itself is moved inside here */
+#pres-hint {
+  position: fixed; top: 14px; right: 14px;
+  background: rgba(0,0,0,.85); border: 1px solid #333;
+  padding: 8px 14px; border-radius: 6px;
+  font-size: 11px; color: #666; line-height: 2;
+  z-index: 10001; font-family: var(--font-ui); pointer-events: none;
+}
+
+/* ── GUIDE MODAL ── */
+#guide-modal {
+  display:none; position:fixed; inset:0; z-index:9998;
+  background:rgba(0,0,0,.72); align-items:center; justify-content:center;
+}
+#guide-modal.on { display:flex; }
+#guide-box {
+  background:var(--surf); border:1px solid var(--border); border-radius:8px;
+  width:460px; max-height:80vh; overflow-y:auto; padding:24px; position:relative;
+}
+#guide-box h2 { font-size:13px; color:var(--accent); letter-spacing:2px; text-transform:uppercase; margin-bottom:18px; }
+#guide-box h3 { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; margin:14px 0 7px; }
+.close-btn { position:absolute; top:14px; right:14px; background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer; }
+.close-btn:hover { color:var(--text); }
+.guide-table { width:100%; border-collapse:collapse; }
+.guide-table td { padding:5px 8px; font-size:12px; border-bottom:1px solid var(--border); vertical-align:top; }
+.guide-table td:first-child { color:var(--blue); white-space:nowrap; width:42%; }
+.guide-table td:last-child  { color:var(--muted); }
+.gtag { display:inline-block; background:var(--surf2); border:1px solid var(--border); padding:1px 6px; border-radius:4px; font-size:11px; color:var(--blue); margin:2px 2px 2px 0; font-family:var(--font-mono); }
+.gkey { display:inline-block; background:var(--surf2); border:1px solid var(--border); padding:1px 8px; border-radius:4px; font-size:11px; color:var(--accent); margin:2px; font-family:var(--font-mono); }
+
+/* ── TOAST ── */
+#toast {
+  position:fixed; bottom:54px; left:50%; transform:translateX(-50%);
+  background:rgba(30,31,38,.97); border:1px solid var(--border);
+  padding:7px 16px; border-radius:8px; font-size:12px; color:var(--text);
+  opacity:0; pointer-events:none; transition:opacity .18s; z-index:9997; white-space:nowrap;
+}
+#toast.on { opacity:1; }
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<div id="topnav">
+  <div class="logo">◼ Dialogue<br>Animator</div>
+
+  <div class="ng">
+    <span class="nlabel">Sound</span>
+    <select id="wave-sel">
+      <option value="triangle" selected>Triangle</option>
+      <option value="square">Square</option>
+      <option value="sawtooth">Sawtooth</option>
+    </select>
+    <span class="nlabel">Vol</span>
+    <input type="range" id="vol-sl" min="0" max="100" value="28" style="width:60px">
+  </div>
+
+  <div class="ng">
+    <span class="nlabel">Speed</span>
+    <select id="speed-sel">
+      <option value="20">Casual Read</option>
+      <option value="40" selected>Normal</option>
+      <option value="65">Fast Banter</option>
+      <option value="100">Rapid Fire</option>
+      <option value="0">Custom</option>
+    </select>
+    <input type="range" id="speed-sl" min="10" max="120" value="40" style="width:60px;display:none">
+    <span id="speed-disp" style="font-size:11px;color:var(--muted);display:none;min-width:20px"></span>
+  </div>
+
+  <div class="ng">
+    <div class="sw-row">
+      <label class="sw"><input type="checkbox" id="autoAdv"><span class="sw-t"></span></label>
+      <span>Auto-Advance</span>
+    </div>
+    <input type="number" id="autoAdv-sec" value="2" min="0.5" max="15" step="0.5" style="width:44px">
+    <span style="font-size:10px;color:var(--muted)">s</span>
+  </div>
+
+  <div class="ng">
+    <button class="btn b" id="btn-pres">⛶ Presenter <span style="opacity:.45;font-size:9px">F</span></button>
+    <button class="btn"   id="btn-guide">☰ Guide</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT: SCRIPT -->
+  <div id="left-panel">
+    <div class="ph">
+      <h3>Dialogue Blocks</h3>
+      <span class="est" id="est-badge"></span>
+    </div>
+
+    <!-- Block list -->
+    <div id="block-list"></div>
+    <button class="blk-add-btn" id="btn-add-block">+ Add Block</button>
+
+    <!-- Per-block editor -->
+    <div id="script-meta" style="border-top:1px solid var(--border)">
+      <div class="meta-row" style="margin-bottom:4px">
+        <span class="meta-label">Speaker</span>
+        <input type="text" id="ed-spk" placeholder="YOU" style="flex:1;user-select:text">
+      </div>
+      <div class="meta-row" style="margin-bottom:4px">
+        <span class="meta-label">Expr</span>
+        <select id="ed-expr" style="flex:1">
+          <option value="1">Slot 1</option>
+          <option value="2">Slot 2</option>
+          <option value="3">Slot 3</option>
+          <option value="4">Slot 4</option>
+        </select>
+        <span class="meta-label" style="margin-left:4px">Wait</span>
+        <input type="number" id="ed-wait" value="0" min="0" max="30" step="0.5" style="width:44px">
+        <span style="font-size:10px;color:var(--muted)">s</span>
+      </div>
+      <textarea id="script-txt" placeholder="* Type dialogue for this block...&#10;Use Guide for tags." style="width:100%;height:90px;resize:none;background:var(--surf2);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:7px 8px;border-radius:6px;line-height:1.6;user-select:text;"></textarea>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button class="btn g" id="btn-save-block" style="flex:1">✓ Save</button>
+        <button class="btn"   id="btn-move-up">↑</button>
+        <button class="btn"   id="btn-move-dn">↓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER: PREVIEW -->
+  <div id="center">
+    <div id="preview-wrap">
+      <div id="preview">
+        <div id="prog-bar"><div id="prog-fill"></div></div>
+        <div id="line-ctr"></div>
+        <div id="flash-ov"></div>
+        <div id="bg-layer"></div>
+
+        <!-- Dialogue wrapper — moved by X/Y sliders -->
+        <div id="dial-wrap" class="style-bar">
+          <div id="spk-name"></div>
+          <div id="dial-bar">
+            <div id="portrait-box">
+              <div id="portrait-ph">No<br>Image</div>
+              <img id="portrait-img" src="" alt="" style="display:none">
+            </div>
+            <div id="dial-text">
+              <span id="txt-out"></span><span id="cur">▌</span>
+            </div>
+            <div id="next-arr"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Playback status bar -->
+    <div id="playback-bar">
+      <div class="pb-g">
+        <button class="btn g lg" id="btn-play">▶ Play</button>
+        <button class="btn lg"   id="btn-pause" disabled>⏸</button>
+        <button class="btn lg"   id="btn-stop"  disabled>■</button>
+        <button class="btn lg"   id="btn-skip">⏭</button>
+      </div>
+      <div class="pb-g">
+        <span class="pb-label">Background</span>
+        <label class="upbtn" style="width:auto;padding:4px 10px">
+          <input type="file" id="up-bg" accept="image/*"> + Image
+        </label>
+        <input type="color" id="bg-col" value="#000000" title="BG color">
+        <button class="btn" id="btn-clr-bg">✕</button>
+      </div>
+      <div class="pb-g">
+        <span id="status-txt">Ready.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: SETTINGS -->
+  <div id="right-panel">
+
+    <!-- Character -->
+    <div class="rps">
+      <h3>Character</h3>
+      <div class="rf">
+        <label>Default Speaker Name</label>
+        <input type="text" id="char-name" value="YOU" style="user-select:text">
+      </div>
+      <div class="rf">
+        <label>Name Tag Color</label>
+        <input type="color" id="name-col" value="#7ee8a2">
+      </div>
+    </div>
+
+    <!-- Expression slots -->
+    <div class="rps">
+      <h3>Expression Slots</h3>
+      <div id="expr-grid"></div>
+    </div>
+
+    <!-- Layout toggles -->
+    <div class="rps">
+      <h3>Layout</h3>
+
+      <!-- Toggle: Show portrait image -->
+      <div class="layout-row">
+        <div class="lr-label">Show Portrait</div>
+        <label class="sw"><input type="checkbox" id="tog-portrait" checked><span class="sw-t"></span></label>
+      </div>
+
+      <!-- Toggle: Show name tag -->
+      <div class="layout-row">
+        <div class="lr-label">Show Name Tag</div>
+        <label class="sw"><input type="checkbox" id="tog-name" checked><span class="sw-t"></span></label>
+      </div>
+
+      <!-- Toggle: Portrait shake -->
+      <div class="layout-row">
+        <div class="lr-label">Portrait Shake</div>
+        <label class="sw"><input type="checkbox" id="tog-shake" checked><span class="sw-t"></span></label>
+      </div>
+
+      <!-- Toggle: Floating box -->
+      <div class="layout-row">
+        <div class="lr-label">Floating Box</div>
+        <label class="sw"><input type="checkbox" id="tog-float"><span class="sw-t"></span></label>
+      </div>
+
+      <!-- Float sliders: only visible when floating box is on -->
+      <div class="sub-option" id="sub-xy">
+        <label>Box Position</label>
+        <div class="xy-row">
+          <span class="xy-label">X</span>
+          <input type="range" id="pos-x" min="0" max="100" value="50">
+          <span class="xy-val" id="pos-x-val">50%</span>
+        </div>
+        <div class="xy-row">
+          <span class="xy-label">Y</span>
+          <input type="range" id="pos-y" min="0" max="100" value="80">
+          <span class="xy-val" id="pos-y-val">80%</span>
+        </div>
+        <div class="xy-row">
+          <span class="xy-label" style="width:auto;font-size:10px;color:var(--muted)">Width</span>
+          <input type="range" id="box-w" min="30" max="100" value="85">
+          <span class="xy-val" id="box-w-val">85%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dialogue Box Style -->
+    <div class="rps">
+      <h3>Box Style</h3>
+      <div class="rf">
+        <label>Height (px)</label>
+        <input type="number" id="bar-h" value="100" min="50" max="200">
+      </div>
+      <div class="rf">
+        <label>Font Size (px)</label>
+        <input type="number" id="font-sz" value="15" min="10" max="32">
+      </div>
+      <div class="rf">
+        <div class="color-row">
+          <span class="clbl">Border</span><input type="color" id="box-bdr" value="#ffffff">
+          <span class="clbl">Text</span><input type="color" id="txt-col" value="#ffffff">
+          <span class="clbl">BG</span><input type="color" id="box-bg" value="#000000">
+        </div>
+      </div>
+    </div>
+
+    <!-- Blip sound -->
+    <div class="rps">
+      <h3>Blip Sound</h3>
+      <div class="rf">
+        <label>Pitch (Hz)</label>
+        <input type="number" id="blip-hz" value="440" min="80" max="1400" style="width:72px">
+      </div>
+      <div class="rf">
+        <label>Pitch Variance</label>
+        <input type="range" id="blip-var" min="0" max="200" value="60" style="width:100%">
+      </div>
+      <div class="rf">
+        <label>Duration (ms)</label>
+        <input type="number" id="blip-ms" value="60" min="10" max="200" style="width:72px">
+      </div>
+      <button class="btn" id="btn-blip" style="width:100%">▶ Test Blip</button>
+    </div>
+
+  </div><!-- end right -->
+</div><!-- end main -->
+
+<!-- PRESENTER OVERLAY -->
+<div id="presenter">
+  <div id="pres-stage"></div>
+  <div id="pres-hint">
+    <b style="color:#aaa">PRESENTER MODE</b><br>
+    Space &nbsp;— Play / Next<br>
+    P &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— Pause / Resume<br>
+    Esc &nbsp;&nbsp;— Exit
+  </div>
+</div>
+
+<!-- GUIDE MODAL -->
+<div id="guide-modal">
+  <div id="guide-box">
+    <button class="close-btn" id="guide-close">✕</button>
+    <h2>☰ Guide</h2>
+
+    <h3>Keyboard Shortcuts</h3>
+    <table class="guide-table">
+      <tr><td><span class="gkey">Space</span></td><td>Play / skip / next block</td></tr>
+      <tr><td><span class="gkey">Click preview</span></td><td>Same as Space</td></tr>
+      <tr><td><span class="gkey">P</span></td><td>Pause / Resume</td></tr>
+      <tr><td><span class="gkey">Esc</span></td><td>Stop (or exit Presenter)</td></tr>
+      <tr><td><span class="gkey">F</span></td><td>Presenter Mode</td></tr>
+    </table>
+
+    <h3>Text Effects &nbsp;<span style="font-size:9px;color:var(--muted)">wrap words, close with [/]</span></h3>
+    <table class="guide-table">
+      <tr><td><span class="gtag">[wave]</span><span class="gtag">[/]</span></td><td>Floating wave animation</td></tr>
+      <tr><td><span class="gtag">[shake]</span><span class="gtag">[/]</span></td><td>Shaky text</td></tr>
+      <tr><td><span class="gtag">[rainbow]</span><span class="gtag">[/]</span></td><td>Colour-cycling text</td></tr>
+      <tr><td><span class="gtag">[big]</span><span class="gtag">[/]</span></td><td>Larger text</td></tr>
+      <tr><td><span class="gtag">[small]</span><span class="gtag">[/]</span></td><td>Smaller text</td></tr>
+    </table>
+
+    <h3>Event Tags &nbsp;<span style="font-size:9px;color:var(--muted)">fire instantly while typing</span></h3>
+    <table class="guide-table">
+      <tr><td><span class="gtag">[flash]</span></td><td>White flash</td></tr>
+      <tr><td><span class="gtag">[screenshake]</span></td><td>Shakes the preview</td></tr>
+      <tr><td><span class="gtag">[pause:2]</span></td><td>Hold 2 seconds before continuing</td></tr>
+      <tr><td><span class="gtag">[expr:1]</span> – <span class="gtag">[expr:4]</span></td><td>Swap expression slot mid-line</td></tr>
+    </table>
+
+    <h3>Example</h3>
+    <div style="background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;color:var(--muted);line-height:1.9;font-family:var(--font-mono);">
+      * This is [wave]really[/] important...<br>
+      [pause:1.5][expr:2][flash]* WATCH OUT!
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+// ── DATA ──
+// blocks = array of { txt, spk, expr, wait }
+let blocks = [
+  { txt:'* Hey! Welcome to the video.', spk:'', expr:'1', wait:0 }
+];
+let selIdx   = 0;  // which block is selected in editor
+let curBlock = 0;  // which block is currently playing/shown
+let audioCtx = null;
+let bgImgUrl = null;
+let presOn   = false;
+let playing  = false;
+let paused   = false;
+let typeTmr  = null, autoTmr = null, pauseTmr = null;
+let queue    = [];
+const expr   = { 1:null, 2:null, 3:null, 4:null };
+let activeExpr = 1;
+
+// ── ELEMENT REFS ──
+const preview   = $('preview');
+const dialWrap  = $('dial-wrap');
+const dialBar   = $('dial-bar');
+const spkEl     = $('spk-name');
+const txtOut    = $('txt-out');
+const curEl     = $('cur');
+const nextArr   = $('next-arr');
+const portBox   = $('portrait-box');
+const portImg   = $('portrait-img');
+const portPh    = $('portrait-ph');
+const statusEl  = $('status-txt');
+const flashOv   = $('flash-ov');
+
+// ── TOAST ──
+let toastTmr;
+function toast(msg, ms=1800) {
+  const t=$('toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toastTmr); toastTmr=setTimeout(()=>t.classList.remove('on'),ms);
+}
+function setStatus(msg,cls='') { statusEl.textContent=msg; statusEl.className=cls; }
+
+// ── AUDIO ──
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+}
+function playBlip() {
+  initAudio();
+  const vol=+$('vol-sl').value/100; if(!vol) return;
+  const base=+$('blip-hz').value||440, vari=+$('blip-var').value||60;
+  const dur=+$('blip-ms').value/1000||.06;
+  const osc=audioCtx.createOscillator(), gain=audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.type=$('wave-sel').value;
+  osc.frequency.setValueAtTime(Math.max(80,base+Math.random()*vari-vari/2),audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol*.28,audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+dur);
+  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime+dur);
+}
+
+// ── PARSER ──
+function parseScript(raw) {
+  const tokens=[]; let i=0, styles=[];
+  const STYLES=['shake','wave','rainbow','big','small'];
+  while(i<raw.length){
+    if(raw[i]==='['){
+      const end=raw.indexOf(']',i);
+      if(end!==-1){
+        const tag=raw.slice(i+1,end).trim().toLowerCase(); i=end+1;
+        if(tag==='/'){styles.pop();continue;}
+        if(STYLES.includes(tag)){styles.push(tag);continue;}
+        if(tag==='flash'||tag==='screenshake'){tokens.push({type:'event',event:tag});continue;}
+        if(tag.startsWith('pause:')){tokens.push({type:'event',event:'pause',arg:parseFloat(tag.split(':')[1])||1});continue;}
+        if(tag.startsWith('expr:')) {tokens.push({type:'event',event:'expr', arg:parseInt(tag.split(':')[1])||1});continue;}
+        continue;
+      }
+    }
+    const ch=raw[i++];
+    const esc=ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const s=styles[styles.length-1];
+    tokens.push({type:'char',ch,html:s?`<span class="fx-${s}">${esc}</span>`:esc});
+  }
+  return tokens;
+}
+
+// ── EXPRESSIONS ──
+function setExpr(slot){
+  activeExpr=slot;
+  const url=expr[slot];
+  if(url){portImg.src=url;portImg.style.display='block';portPh.style.display='none';}
+  else   {portImg.style.display='none';portPh.style.display='block';}
+  document.querySelectorAll('.eslot').forEach((el,i)=>el.classList.toggle('active',i+1===slot));
+}
+function buildExprGrid(){
+  const grid=$('expr-grid'); grid.innerHTML='';
+  for(let i=1;i<=4;i++){
+    const slot=document.createElement('div');
+    slot.className='eslot'+(i===activeExpr?' active':'');
+    if(expr[i]) slot.innerHTML=`<img src="${expr[i]}" alt=""><div class="elbl">${i}</div>`;
+    else        slot.innerHTML=`<span class="enum">${i}</span>`;
+    const inp=document.createElement('input');
+    inp.type='file'; inp.accept='image/*'; inp.style.display='none';
+    inp.addEventListener('change',e=>{
+      const file=e.target.files[0]; if(!file) return;
+      expr[i]=URL.createObjectURL(file); buildExprGrid(); setExpr(i); e.target.value='';
+    });
+    slot.appendChild(inp);
+    slot.addEventListener('click',()=>{ expr[i]?setExpr(i):inp.click(); });
+    slot.addEventListener('contextmenu',e=>{e.preventDefault();inp.click();});
+    grid.appendChild(slot);
+  }
+}
+
+// ── LAYOUT TOGGLES ──
+function applyLayout(){
+  const showPortrait = $('tog-portrait').checked;
+  const showName     = $('tog-name').checked;
+  const isFloat      = $('tog-float').checked;
+
+  // Portrait
+  portBox.style.display = showPortrait ? 'flex' : 'none';
+
+  // Name tag — show/hide immediately based on toggle + current speaker value
+  if(showName){
+    const spkTxt = ($('ed-spk').value || $('char-name').value || '').trim();
+    if(spkTxt){ spkEl.textContent = spkTxt; spkEl.classList.add('show'); }
+    else spkEl.classList.remove('show');
+  } else {
+    spkEl.classList.remove('show');
+  }
+
+  // Box style
+  dialWrap.classList.toggle('style-float', isFloat);
+  dialWrap.classList.toggle('style-bar',  !isFloat);
+  $('sub-xy').classList.toggle('show', isFloat);
+
+  applyPosition();
+  applyBoxStyle();
+}
+
+function applyPosition(){
+  const isFloat = $('tog-float').checked;
+  const barH    = parseInt($('bar-h').value)||100;
+
+  if(isFloat){
+    const xPct = +$('pos-x').value;   // 0–100
+    const yPct = +$('pos-y').value;   // 0–100 (0=top, 100=bottom)
+    const wPct = +$('box-w').value;   // 30–100
+    const pw=854, ph=480;
+    const w = pw * wPct/100;
+    const left = (pw - w) * (xPct/100);
+    const top  = (ph - barH) * (yPct/100);
+    dialWrap.style.cssText=`left:${left}px;top:${top}px;width:${w}px;right:auto;bottom:auto;`;
+    $('pos-x-val').textContent = xPct+'%';
+    $('pos-y-val').textContent = yPct+'%';
+    $('box-w-val').textContent = wPct+'%';
+  } else {
+    dialWrap.style.cssText=`left:0;bottom:0;width:100%;right:auto;top:auto;`;
+  }
+}
+
+function applyBoxStyle(){
+  const h   = parseInt($('bar-h').value)||100;
+  const fs  = parseInt($('font-sz').value)||15;
+  const bdr = $('box-bdr').value;
+  const tc  = $('txt-col').value;
+  const bg  = $('box-bg').value;
+  const nc  = $('name-col').value;
+
+  dialBar.style.height      = h+'px';
+  dialBar.style.borderColor = bdr;
+  dialBar.style.background  = hexRgba(bg,.93);
+
+  const dt=$('dial-text');
+  dt.style.fontSize=fs+'px'; dt.style.color=tc;
+  curEl.style.background=tc; curEl.style.height=fs+'px';
+  nextArr.style.borderTopColor=tc;
+
+  const ph=$('tog-portrait').checked;
+  portBox.style.width =(h-18)+'px';
+  portBox.style.height=(h-18)+'px';
+  portBox.style.borderColor=bdr;
+  spkEl.style.borderColor=bdr;
+  spkEl.style.color=nc;
+
+  applyPosition();
+}
+
+function hexRgba(hex,a){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function applyBg(){
+  const layer=$('bg-layer'), col=$('bg-col').value;
+  if(bgImgUrl){ layer.style.backgroundImage=`url(${bgImgUrl})`; preview.style.background=''; }
+  else        { layer.style.backgroundImage=''; preview.style.background=col; }
+}
+
+// ── TYPEWRITER ──
+function getDelay(){
+  const v=parseInt($('speed-sl').value);
+  return Math.round(150-(v-10)*(135/110));
+}
+
+// ── BLOCK LIST UI ──
+function renderBlockList(){
+  const list=$('block-list'); list.innerHTML='';
+  blocks.forEach((b,i)=>{
+    const row=document.createElement('div');
+    row.className='blk-item'+(i===selIdx?' active':'')+(i<curBlock&&playing?' done':'');
+    row.innerHTML=`<span class="blk-num">${i+1}</span>`
+      +`<span class="blk-txt">${(b.txt||'').replace(/\[.*?\]/g,'').slice(0,36)||'(empty)'}</span>`
+      +`<span class="blk-del" data-i="${i}">✕</span>`;
+    row.addEventListener('click',(e)=>{
+      if(e.target.classList.contains('blk-del')) return;
+      selectBlock(i);
+    });
+    row.querySelector('.blk-del').addEventListener('click',()=>deleteBlock(i));
+    list.appendChild(row);
+  });
+  updateProgBar();
+}
+
+function selectBlock(i){
+  selIdx=i;
+  const b=blocks[i];
+  $('ed-spk').value  = b.spk  || '';
+  $('ed-expr').value = b.expr || '1';
+  $('ed-wait').value = b.wait || 0;
+  $('script-txt').value = b.txt || '';
+  renderBlockList();
+  updateEstTime();
+}
+
+function saveBlock(){
+  if(!blocks[selIdx]) return;
+  blocks[selIdx].txt  = $('script-txt').value;
+  blocks[selIdx].spk  = $('ed-spk').value;
+  blocks[selIdx].expr = $('ed-expr').value;
+  blocks[selIdx].wait = parseFloat($('ed-wait').value)||0;
+  renderBlockList();
+  toast('Block saved ✓');
+}
+
+function addBlock(){
+  const nb={ txt:'* New block…', spk:'', expr:'1', wait:0 };
+  blocks.splice(selIdx+1, 0, nb);
+  selectBlock(selIdx+1); // selectBlock() already re-renders the list
+}
+
+function deleteBlock(i){
+  if(blocks.length<=1){ toast("Can't delete last block"); return; }
+  blocks.splice(i,1);
+  // Keep the editor following the block that was selected, not just its
+  // old index — deleting an earlier block would otherwise shift selIdx
+  // onto the wrong item.
+  if(i < selIdx) selIdx--;
+  selIdx = Math.max(0, Math.min(selIdx, blocks.length-1));
+  selectBlock(selIdx); // selectBlock() already re-renders the list
+}
+
+function moveBlock(dir){
+  const ni=selIdx+dir;
+  if(ni<0||ni>=blocks.length) return;
+  [blocks[selIdx],blocks[ni]]=[blocks[ni],blocks[selIdx]];
+  selectBlock(ni);
+}
+
+function updateProgBar(){
+  const pct=blocks.length>1?(curBlock/(blocks.length-1))*100:0;
+  $('prog-fill').style.width=pct+'%';
+  $('line-ctr').textContent=`${curBlock+1}/${blocks.length}`;
+}
+
+function updateEstTime(){
+  const txt=($('script-txt').value||'').replace(/\[.*?\]/g,'');
+  const v=parseInt($('speed-sl').value);
+  const delay=Math.round(150-(v-10)*(135/110));
+  const chars=txt.replace(/\s/g,'').length;
+  $('est-badge').textContent=chars>0?`~${(chars*delay/1000).toFixed(1)}s`:'';
+}
+
+// ── AUTO FIT FONT TO BOX ──
+function autoFitFont(txt){
+  const baseFontSize = parseInt($('font-sz').value) || 15;
+  const dialTextEl   = $('dial-text');
+  const barH         = parseInt($('bar-h').value) || 100;
+  const portVisible  = $('tog-portrait').checked;
+  const portW        = portVisible ? (barH - 18) + 12 : 0; // portrait width + gap
+  const barW         = dialBar.offsetWidth || 700;
+  const availW       = barW - portW - 40; // 40 = padding
+  const availH       = barH - 16;
+
+  // Strip tags for measurement
+  const plain = txt.replace(/\[.*?\]/g,'');
+
+  // Start from base size and shrink until it fits
+  let fs = baseFontSize;
+  const probe = document.createElement('div');
+  probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;
+    font-family:var(--font-mono);white-space:pre-wrap;word-break:break-word;
+    width:${availW}px;line-height:1.6;`;
+  document.body.appendChild(probe);
+
+  while(fs > 8){
+    probe.style.fontSize = fs + 'px';
+    probe.textContent    = plain;
+    if(probe.offsetHeight <= availH) break;
+    fs--;
+  }
+  document.body.removeChild(probe);
+
+  dialTextEl.style.fontSize = fs + 'px';
+  curEl.style.height         = fs + 'px';
+}
+
+// ── PLAY A SPECIFIC BLOCK ──
+function startBlock(idx){
+  if(idx<0||idx>=blocks.length) return;
+  clearTimeout(typeTmr); clearTimeout(autoTmr); clearTimeout(pauseTmr);
+  curBlock=idx; playing=true; paused=false; queue=[];
+  txtOut.innerHTML='';
+  nextArr.classList.remove('show');
+  curEl.style.display='inline-block';
+  curEl.classList.add('on');
+
+  const b=blocks[idx];
+  const spkTxt=((b.spk||$('char-name').value)||'').trim();
+  const showName=$('tog-name').checked;
+  if(spkTxt&&showName){ spkEl.textContent=spkTxt; spkEl.classList.add('show'); }
+  else spkEl.classList.remove('show');
+
+  setExpr(parseInt(b.expr)||1);
+  if($('tog-shake').checked) portImg.classList.add('talking');
+
+  const rawTxt = b.txt || '';
+  autoFitFont(rawTxt);
+  queue=parseScript(rawTxt);
+  updateButtons();
+  updateProgBar();
+  renderBlockList();
+  setStatus(`Block ${idx+1}/${blocks.length} — Typing…`,'active');
+  typeNext();
+}
+
+// Keep startScript as alias starting from block 0
+function startScript(){ startBlock(0); }
+
+function typeNext(){
+  if(!playing||paused) return;
+  if(!queue.length){ finishScript(); return; }
+
+  const tok=queue.shift();
+
+  if(tok.type==='event'){
+    handleEvent(tok);
+    if(playing&&!paused) typeTmr=setTimeout(typeNext,0);
+    return;
+  }
+  txtOut.innerHTML+=tok.html;
+  if(tok.ch.trim()) playBlip();
+  let d=getDelay();
+  if(['.','!','?'].includes(tok.ch)) d*=4;
+  else if([',',';',':'].includes(tok.ch)) d*=2.5;
+  else if(tok.ch==='\n') d*=3;
+  typeTmr=setTimeout(typeNext,d);
+}
+
+function handleEvent(tok){
+  if(tok.event==='flash'){ flashOv.style.opacity='1'; setTimeout(()=>flashOv.style.opacity='0',80); }
+  if(tok.event==='screenshake'){
+    preview.classList.remove('shake'); void preview.offsetWidth;
+    preview.classList.add('shake'); setTimeout(()=>preview.classList.remove('shake'),320);
+  }
+  if(tok.event==='expr') setExpr(tok.arg);
+  if(tok.event==='pause'){
+    paused=true;
+    pauseTmr=setTimeout(()=>{ if(playing){paused=false;typeNext();} },tok.arg*1000);
+  }
+}
+
+function finishScript(){
+  playing=false;
+  curEl.classList.remove('on');
+  curEl.style.display='none';
+  nextArr.classList.add('show');
+  portImg.classList.remove('talking');
+  updateProgBar();
+
+  const b=blocks[curBlock];
+  const waitS=parseFloat(b.wait)||0;
+  const auto=$('autoAdv').checked;
+  const gDel=parseFloat($('autoAdv-sec').value)||2;
+
+  const hasNext = curBlock < blocks.length-1;
+
+  if(waitS>0){
+    // per-block wait then advance
+    setStatus(`Block ${curBlock+1} done. Next in ${waitS}s…`,'done');
+    autoTmr=setTimeout(()=>{ autoTmr=null; advanceBlock(); },waitS*1000);
+  } else if(auto && hasNext){
+    setStatus(`Auto-advancing in ${gDel}s…`,'done');
+    autoTmr=setTimeout(()=>{ autoTmr=null; advanceBlock(); },gDel*1000);
+  } else if(!hasNext){
+    // last block
+    if(auto){
+      const delay=waitS>0?waitS:gDel;
+      setStatus(`Done! Restarting in ${delay}s…`,'done');
+      autoTmr=setTimeout(()=>{ autoTmr=null; startBlock(0); },delay*1000);
+    } else {
+      setStatus('Done! Space to restart.','done');
+    }
+  } else {
+    setStatus(`Block ${curBlock+1} done. Space → next block.`,'done');
+  }
+  updateButtons();
+}
+
+function advanceBlock(){
+  if(curBlock < blocks.length-1){
+    txtOut.innerHTML='';
+    nextArr.classList.remove('show');
+    startBlock(curBlock+1);
+  } else {
+    startBlock(0);
+  }
+}
+
+function skipOrReplay(){
+  if(playing||paused){
+    // Skip to end of current block
+    clearTimeout(typeTmr); clearTimeout(pauseTmr);
+    paused=false;
+    // Apply remaining text instantly; keep any pending expression change so
+    // the portrait doesn't get stuck on a stale slot after a skip.
+    queue.forEach(t=>{
+      if(t.type==='char') txtOut.innerHTML+=t.html;
+      else if(t.type==='event' && t.event==='expr') setExpr(t.arg);
+    });
+    queue=[]; finishScript();
+  } else if(autoTmr){
+    // Cancel wait, go now
+    clearTimeout(autoTmr); autoTmr=null; advanceBlock();
+  } else if(nextArr.classList.contains('show')){
+    // Waiting for manual next — advance
+    txtOut.innerHTML='';
+    nextArr.classList.remove('show');
+    advanceBlock();
+  } else {
+    // Not started — start from block 0
+    startBlock(0);
+  }
+}
+
+function stopAll(){
+  clearTimeout(typeTmr); clearTimeout(autoTmr); clearTimeout(pauseTmr);
+  playing=false; paused=false; queue=[];
+  curEl.classList.remove('on'); curEl.style.display='none'; nextArr.classList.remove('show');
+  portImg.classList.remove('talking');
+  $('prog-fill').style.width='0%';
+  setStatus('Stopped.',''); updateButtons();
+}
+
+function pauseResume(){
+  if(!playing&&!paused) return;
+  if(paused){ paused=false; setStatus('Typing…','active'); typeNext(); }
+  else      { paused=true; clearTimeout(typeTmr); setStatus('Paused.',''); }
+  updateButtons();
+}
+
+function updateButtons(){
+  const active=playing||paused;
+  $('btn-play').disabled =active&&!paused;
+  $('btn-pause').disabled=!active;
+  $('btn-stop').disabled =!active&&!autoTmr;
+}
+
+// ── PRESENTER MODE (fixed: scale preview IN PLACE via CSS transform) ──
+let presScale=1;
+function enterPresenter(){
+  presOn=true;
+  $('presenter').classList.add('on');
+
+  function resize(){
+    const vw=window.innerWidth, vh=window.innerHeight;
+    const pw=854, ph=480;
+    presScale=Math.min(vw/pw, vh/ph);
+    const stage=$('pres-stage');
+    stage.style.width=pw+'px'; stage.style.height=ph+'px';
+    stage.style.transform=`scale(${presScale})`;
+    stage.style.transformOrigin='center center';
+    // Move preview into stage
+    stage.appendChild(preview);
+    preview.style.position='relative';
+    preview.style.left=''; preview.style.top=''; preview.style.transform='';
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  $('presenter')._resize=resize;
+  toast('Presenter Mode — Esc to exit',2500);
+}
+
+function exitPresenter(){
+  presOn=false;
+  $('presenter').classList.remove('on');
+  window.removeEventListener('resize', $('presenter')._resize);
+  // Return preview to its normal home
+  $('preview-wrap').appendChild(preview);
+  preview.style.position='relative';
+  preview.style.left=''; preview.style.top=''; preview.style.transform='';
+}
+
+// ── GUIDE ──
+$('btn-guide').addEventListener('click',()=>$('guide-modal').classList.add('on'));
+$('guide-close').addEventListener('click',()=>$('guide-modal').classList.remove('on'));
+$('guide-modal').addEventListener('click',e=>{ if(e.target===$('guide-modal')) $('guide-modal').classList.remove('on'); });
+
+// ── KEYBOARD ──
+document.addEventListener('keydown',e=>{
+  const tag=document.activeElement.tagName;
+  const inInput=tag==='TEXTAREA'||tag==='INPUT'||tag==='SELECT';
+  if(e.code==='Escape'){
+    if($('guide-modal').classList.contains('on')){$('guide-modal').classList.remove('on');return;}
+    presOn?exitPresenter():stopAll(); return;
+  }
+  if((e.key==='f'||e.key==='F')&&!inInput){ e.preventDefault(); presOn?exitPresenter():enterPresenter(); return; }
+  if(inInput) return;
+  if(e.code==='Space'){ e.preventDefault(); skipOrReplay(); }
+  if(e.key==='p'||e.key==='P') pauseResume();
+});
+
+// ── SPEED ──
+$('speed-sel').addEventListener('change',function(){
+  const v=this.value,sl=$('speed-sl'),dp=$('speed-disp');
+  if(v==='0'){sl.style.display=dp.style.display='inline-block';dp.textContent=sl.value;}
+  else{sl.style.display=dp.style.display='none';sl.value=v;}
+  updateEstTime();
+});
+$('speed-sl').addEventListener('input',function(){$('speed-disp').textContent=this.value;updateEstTime();});
+$('script-txt').addEventListener('input',updateEstTime);
+
+// Block management buttons
+$('btn-add-block').addEventListener('click', addBlock);
+$('btn-save-block').addEventListener('click', saveBlock);
+$('btn-move-up').addEventListener('click', ()=>moveBlock(-1));
+$('btn-move-dn').addEventListener('click', ()=>moveBlock(1));
+
+// Click preview to advance (same as Space)
+$('preview').addEventListener('click', ()=>{ if(!presOn) skipOrReplay(); });
+
+// ── LAYOUT TOGGLE LISTENERS ──
+$('tog-portrait').addEventListener('change',applyLayout);
+$('tog-name').addEventListener('change',applyLayout);
+$('tog-shake').addEventListener('change',applyLayout);
+$('tog-float').addEventListener('change',applyLayout);
+$('pos-x').addEventListener('input',applyPosition);
+$('pos-y').addEventListener('input',applyPosition);
+$('box-w').addEventListener('input',applyPosition);
+
+// Live name tag update when speaker fields change
+['ed-spk','char-name'].forEach(id=>{
+  $(id).addEventListener('input',()=>{
+    if($('tog-name').checked){
+      const spkTxt=($('ed-spk').value||$('char-name').value||'').trim();
+      if(spkTxt){spkEl.textContent=spkTxt;spkEl.classList.add('show');}
+      else spkEl.classList.remove('show');
+    }
+  });
+});
+
+// ── STYLE LISTENERS ──
+['bar-h','font-sz','box-bdr','txt-col','box-bg','name-col'].forEach(id=>$(id).addEventListener('input',applyBoxStyle));
+
+// ── BUTTON BINDINGS ──
+$('btn-play').addEventListener('click', startScript);
+$('btn-pause').addEventListener('click',pauseResume);
+$('btn-stop').addEventListener('click', stopAll);
+$('btn-skip').addEventListener('click', skipOrReplay);
+$('btn-pres').addEventListener('click', ()=>presOn?exitPresenter():enterPresenter());
+$('btn-blip').addEventListener('click', ()=>{initAudio();playBlip();});
+
+// Background
+$('up-bg').addEventListener('change',function(e){
+  const f=e.target.files[0]; if(!f) return; bgImgUrl=URL.createObjectURL(f); applyBg();
+});
+$('bg-col').addEventListener('input',applyBg);
+$('btn-clr-bg').addEventListener('click',()=>{bgImgUrl=null;$('up-bg').value='';applyBg();toast('Background cleared');});
+
+// ── INIT ──
+buildExprGrid();
+renderBlockList();
+selectBlock(0);
+applyLayout();
+applyBoxStyle();
+applyBg();
+updateButtons();
+updateEstTime();
+setStatus('Ready. Press ▶ Play or Space to start.','');
+</script>
+</body>
+</html>
