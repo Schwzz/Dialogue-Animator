@@ -22,7 +22,7 @@ No build step, no dependencies, no backend. It's one `.html` file — open it in
 
 ## Getting started
 
-1. Download `dialogue-animator-v5.html`
+1. Download `dialogue-animator.html`
 2. Open it in any modern browser (Chrome, Firefox, Edge, Safari)
 
 That's it — everything runs client-side. To host it (e.g. GitHub Pages), you can rename it to `index.html` and enable Pages on the repo.
