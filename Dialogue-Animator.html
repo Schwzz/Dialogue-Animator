@@ -243,6 +243,7 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
   padding: 8px 4px 8px 0;
 }
 .blk-del {
+  background: none; border: none; cursor: pointer; font-family: var(--font-ui);
   width: 22px; text-align: center; font-size: 11px;
   color: var(--border); padding: 8px 4px; flex-shrink: 0;
   transition: color .1s;
@@ -382,6 +383,16 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
   z-index: 10001; font-family: var(--font-ui); pointer-events: none;
 }
 
+#presenter.clean #prog-bar, #presenter.clean #line-ctr,
+#presenter.clean #pres-hint { display: none; }
+#preview.playback-paused * { animation-play-state: paused !important; }
+#project-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 14px; background: var(--surf); border-bottom: 1px solid var(--border);
+}
+#save-status { color: var(--muted); font-size: 11px; }
+#save-status.error { color: var(--danger); }
+
 /* ── GUIDE MODAL ── */
 #guide-modal {
   display:none; position:fixed; inset:0; z-index:9998;
@@ -458,6 +469,16 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
   </div>
 </div>
 
+<div id="project-bar">
+  <button class="btn" id="btn-save-project">Save Project</button>
+  <button class="btn" id="btn-load-project">Open Project</button>
+  <input type="file" id="open-project" accept=".json,application/json" hidden>
+  <span id="save-status" role="status" aria-live="polite">Ready</span>
+  <label style="margin-left:auto;font-size:11px;display:flex;gap:6px;align-items:center">
+    <input type="checkbox" id="tog-clean" checked> Clean Presenter View (H)
+  </label>
+</div>
+
 <!-- MAIN -->
 <div id="main">
 
@@ -492,7 +513,7 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
       </div>
       <textarea id="script-txt" placeholder="* Type dialogue for this block...&#10;Use Guide for tags." style="width:100%;height:90px;resize:none;background:var(--surf2);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:7px 8px;border-radius:6px;line-height:1.6;user-select:text;"></textarea>
       <div style="display:flex;gap:5px;margin-top:5px">
-        <button class="btn g" id="btn-save-block" style="flex:1">✓ Save</button>
+        <button class="btn g" id="btn-save-block" style="flex:1">✓ Apply Block</button>
         <button class="btn"   id="btn-move-up">↑</button>
         <button class="btn"   id="btn-move-dn">↓</button>
       </div>
@@ -666,6 +687,7 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
     <b style="color:#aaa">PRESENTER MODE</b><br>
     Space &nbsp;— Play / Next<br>
     P &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— Pause / Resume<br>
+    H &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— Show / hide overlays<br>
     Esc &nbsp;&nbsp;— Exit
   </div>
 </div>
@@ -683,6 +705,7 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
       <tr><td><span class="gkey">P</span></td><td>Pause / Resume</td></tr>
       <tr><td><span class="gkey">Esc</span></td><td>Stop (or exit Presenter)</td></tr>
       <tr><td><span class="gkey">F</span></td><td>Presenter Mode</td></tr>
+      <tr><td><span class="gkey">H</span></td><td>Toggle clean view in Presenter Mode</td></tr>
     </table>
 
     <h3>Text Effects &nbsp;<span style="font-size:9px;color:var(--muted)">wrap words, close with [/]</span></h3>
@@ -704,6 +727,7 @@ input[type=color]  { width: 30px; height: 26px; border: 1px solid var(--border);
 
     <h3>Example</h3>
     <div style="background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;color:var(--muted);line-height:1.9;font-family:var(--font-mono);">
+      Literal brackets: \[Enter\] displays [Enter]. Unknown tags remain visible.<br>
       * This is [wave]really[/] important...<br>
       [pause:1.5][expr:2][flash]* WATCH OUT!
     </div>
@@ -718,17 +742,21 @@ const $ = id => document.getElementById(id);
 
 // ── DATA ──
 // blocks = array of { txt, spk, expr, wait }
+let nextBlockId = 0;
+function blockId(){ return 'block-' + Date.now().toString(36) + '-' + (++nextBlockId); }
 let blocks = [
-  { txt:'* Hey! Welcome to the video.', spk:'', expr:'1', wait:0 }
+  { id:blockId(), txt:'* Hey! Welcome to the video.', spk:'', expr:'1', wait:0 }
 ];
 let selIdx   = 0;  // which block is selected in editor
 let curBlock = 0;  // which block is currently playing/shown
 let audioCtx = null;
 let bgImgUrl = null;
 let presOn   = false;
-let playing  = false;
-let paused   = false;
-let typeTmr  = null, autoTmr = null, pauseTmr = null;
+let playbackState = 'idle';
+let resumeState = 'typing';
+let currentBlockId = null;
+let playTimer = null, deadline = 0, remainingMs = 0, pendingStep = null;
+const effectTimers = new Set();
 let queue    = [];
 const expr   = { 1:null, 2:null, 3:null, 4:null };
 let activeExpr = 1;
@@ -775,25 +803,37 @@ function playBlip() {
 
 // ── PARSER ──
 function parseScript(raw) {
-  const tokens=[]; let i=0, styles=[];
+  const tokens=[]; let i=0; const styles=[];
   const STYLES=['shake','wave','rainbow','big','small'];
+  function character(ch){
+    const esc=ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const style=styles[styles.length-1];
+    tokens.push({type:'char',ch,html:style?`<span class="fx-${style}">${esc}</span>`:esc});
+  }
   while(i<raw.length){
+    if(raw[i]==='\\' && ['[',']','\\'].includes(raw[i+1])){
+      character(raw[i+1]); i+=2; continue;
+    }
     if(raw[i]==='['){
       const end=raw.indexOf(']',i);
       if(end!==-1){
-        const tag=raw.slice(i+1,end).trim().toLowerCase(); i=end+1;
-        if(tag==='/'){styles.pop();continue;}
-        if(STYLES.includes(tag)){styles.push(tag);continue;}
-        if(tag==='flash'||tag==='screenshake'){tokens.push({type:'event',event:tag});continue;}
-        if(tag.startsWith('pause:')){tokens.push({type:'event',event:'pause',arg:parseFloat(tag.split(':')[1])||1});continue;}
-        if(tag.startsWith('expr:')) {tokens.push({type:'event',event:'expr', arg:parseInt(tag.split(':')[1])||1});continue;}
-        continue;
+        const literal=raw.slice(i,end+1), tag=raw.slice(i+1,end).trim().toLowerCase();
+        let token=null, consumed=true;
+        if(tag==='/' && styles.length) styles.pop();
+        else if(STYLES.includes(tag)) styles.push(tag);
+        else if(tag==='flash'||tag==='screenshake') token={type:'event',event:tag};
+        else if(/^pause:(?:\d+(?:\.\d*)?|\.\d+)$/.test(tag) && Number(tag.slice(6))<=3600)
+          token={type:'event',event:'pause',arg:Number(tag.slice(6))};
+        else if(/^expr:[1-4]$/.test(tag)) token={type:'event',event:'expr',arg:Number(tag.slice(5))};
+        else consumed=false;
+        if(token) tokens.push(token);
+        // Unknown or invalid tags are literal text, not silently discarded.
+        if(!consumed) for(const ch of literal) character(ch);
+        i=end+1; continue;
       }
     }
-    const ch=raw[i++];
-    const esc=ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const s=styles[styles.length-1];
-    tokens.push({type:'char',ch,html:s?`<span class="fx-${s}">${esc}</span>`:esc});
+    const cp=raw.codePointAt(i), ch=String.fromCodePoint(cp);
+    character(ch); i+=ch.length;
   }
   return tokens;
 }
@@ -817,10 +857,10 @@ function buildExprGrid(){
     inp.type='file'; inp.accept='image/*'; inp.style.display='none';
     inp.addEventListener('change',e=>{
       const file=e.target.files[0]; if(!file) return;
-      expr[i]=URL.createObjectURL(file); buildExprGrid(); setExpr(i); e.target.value='';
+      readImage(file, 'expr-'+i, url=>{ expr[i]=url; buildExprGrid(); setExpr(i); }); e.target.value='';
     });
     slot.appendChild(inp);
-    slot.addEventListener('click',()=>{ expr[i]?setExpr(i):inp.click(); });
+    slot.addEventListener('click',()=>{ if(expr[i]){setExpr(i);markChanged();} else inp.click(); });
     slot.addEventListener('contextmenu',e=>{e.preventDefault();inp.click();});
     grid.appendChild(slot);
   }
@@ -923,69 +963,68 @@ function renderBlockList(){
   const list=$('block-list'); list.innerHTML='';
   blocks.forEach((b,i)=>{
     const row=document.createElement('div');
-    row.className='blk-item'+(i===selIdx?' active':'')+(i<curBlock&&playing?' done':'');
-    row.innerHTML=`<span class="blk-num">${i+1}</span>`
-      +`<span class="blk-txt">${(b.txt||'').replace(/\[.*?\]/g,'').slice(0,36)||'(empty)'}</span>`
-      +`<span class="blk-del" data-i="${i}">✕</span>`;
-    row.addEventListener('click',(e)=>{
-      if(e.target.classList.contains('blk-del')) return;
-      selectBlock(i);
-    });
-    row.querySelector('.blk-del').addEventListener('click',()=>deleteBlock(i));
+    row.className='blk-item'+(i===selIdx?' active':'')+(i<curBlock&&isPlaybackActive()?' done':'');
+    const num=document.createElement('span'); num.className='blk-num'; num.textContent=i+1;
+    const text=document.createElement('span'); text.className='blk-txt';
+    text.textContent=parseScript(b.txt||'').filter(t=>t.type==='char').map(t=>t.ch).join('').slice(0,36)||'(empty)';
+    const del=document.createElement('button'); del.className='blk-del'; del.textContent='✕';
+    del.type='button'; del.setAttribute('aria-label',`Delete block ${i+1}`);
+    del.addEventListener('click',e=>{e.stopPropagation();deleteBlock(i);});
+    row.append(num,text,del);
+    row.addEventListener('click',()=>selectBlock(i));
     list.appendChild(row);
   });
   updateProgBar();
 }
 
-function selectBlock(i){
-  selIdx=i;
-  const b=blocks[i];
-  $('ed-spk').value  = b.spk  || '';
-  $('ed-expr').value = b.expr || '1';
-  $('ed-wait').value = b.wait || 0;
-  $('script-txt').value = b.txt || '';
-  renderBlockList();
-  updateEstTime();
+function loadBlockEditor(i){
+  selIdx=Math.max(0,Math.min(i,blocks.length-1));
+  const b=blocks[selIdx];
+  $('ed-spk').value=b.spk||'';
+  $('ed-expr').value=b.expr||'1';
+  $('ed-wait').value=b.wait||0;
+  $('script-txt').value=b.txt||'';
+  renderBlockList(); updateEstTime();
 }
+function selectBlock(i){ commitBlock(); loadBlockEditor(i); }
 
-function saveBlock(){
-  if(!blocks[selIdx]) return;
-  blocks[selIdx].txt  = $('script-txt').value;
-  blocks[selIdx].spk  = $('ed-spk').value;
-  blocks[selIdx].expr = $('ed-expr').value;
-  blocks[selIdx].wait = parseFloat($('ed-wait').value)||0;
-  renderBlockList();
-  toast('Block saved ✓');
+function commitBlock(){
+  const b=blocks[selIdx]; if(!b) return;
+  const draft={txt:$('script-txt').value,spk:$('ed-spk').value,
+    expr:String(clampNumber($('ed-expr').value,1,4,1)),
+    wait:clampNumber($('ed-wait').value,0,30,0)};
+  if(Object.keys(draft).some(k=>b[k]!==draft[k])){
+    Object.assign(b,draft); markChanged();
+  }
 }
+function saveBlock(){ commitBlock(); renderBlockList(); toast('Block applied. Use Save Project for a file.'); }
 
+function prepareStructureChange(){
+  commitBlock();
+  // Stop before indexes or block identities change, including completed/waiting states.
+  stopAll();
+}
 function addBlock(){
-  const nb={ txt:'* New block…', spk:'', expr:'1', wait:0 };
-  blocks.splice(selIdx+1, 0, nb);
-  selectBlock(selIdx+1); // selectBlock() already re-renders the list
+  prepareStructureChange();
+  blocks.splice(selIdx+1,0,{id:blockId(),txt:'* New block…',spk:'',expr:'1',wait:0});
+  loadBlockEditor(selIdx+1); markChanged();
 }
-
 function deleteBlock(i){
-  if(blocks.length<=1){ toast("Can't delete last block"); return; }
-  blocks.splice(i,1);
-  // Keep the editor following the block that was selected, not just its
-  // old index — deleting an earlier block would otherwise shift selIdx
-  // onto the wrong item.
-  if(i < selIdx) selIdx--;
-  selIdx = Math.max(0, Math.min(selIdx, blocks.length-1));
-  selectBlock(selIdx); // selectBlock() already re-renders the list
+  if(blocks.length<=1){toast("Can't delete last block");return;}
+  prepareStructureChange(); blocks.splice(i,1);
+  if(i<selIdx) selIdx--;
+  loadBlockEditor(selIdx); markChanged();
 }
-
 function moveBlock(dir){
-  const ni=selIdx+dir;
-  if(ni<0||ni>=blocks.length) return;
+  const ni=selIdx+dir; if(ni<0||ni>=blocks.length) return;
+  prepareStructureChange();
   [blocks[selIdx],blocks[ni]]=[blocks[ni],blocks[selIdx]];
-  selectBlock(ni);
+  loadBlockEditor(ni); markChanged();
 }
-
 function updateProgBar(){
-  const pct=blocks.length>1?(curBlock/(blocks.length-1))*100:0;
+  const pct=currentBlockId ? (blocks.length>1?curBlock/(blocks.length-1)*100:(playbackState==='done'?100:0)):0;
   $('prog-fill').style.width=pct+'%';
-  $('line-ctr').textContent=`${curBlock+1}/${blocks.length}`;
+  $('line-ctr').textContent=`${currentBlockId?curBlock+1:0}/${blocks.length}`;
 }
 
 function updateEstTime(){
@@ -1008,7 +1047,7 @@ function autoFitFont(txt){
   const availH       = barH - 16;
 
   // Strip tags for measurement
-  const plain = txt.replace(/\[.*?\]/g,'');
+  const plain = parseScript(txt).filter(t=>t.type==='char').map(t=>t.ch).join('');
 
   // Start from base size and shrink until it fits
   let fs = baseFontSize;
@@ -1031,164 +1070,151 @@ function autoFitFont(txt){
 }
 
 // ── PLAY A SPECIFIC BLOCK ──
+function isPlaybackActive(){
+  return ['typing','script-wait','block-wait','paused'].includes(playbackState);
+}
+function clearPlaybackTimer(){
+  clearTimeout(playTimer); playTimer=null; deadline=0;
+}
+function scheduleStep(fn,ms){
+  clearPlaybackTimer(); pendingStep=fn; remainingMs=Math.max(0,ms);
+  deadline=performance.now()+remainingMs;
+  playTimer=setTimeout(()=>{
+    playTimer=null; deadline=0; remainingMs=0; pendingStep=null;
+    fn();
+  },remainingMs);
+}
+function clearEffects(){
+  effectTimers.forEach(clearTimeout); effectTimers.clear();
+  flashOv.style.opacity='0'; preview.classList.remove('shake');
+}
+function effectTimeout(fn,ms){
+  const id=setTimeout(()=>{effectTimers.delete(id);fn();},ms); effectTimers.add(id);
+}
 function startBlock(idx){
   if(idx<0||idx>=blocks.length) return;
-  clearTimeout(typeTmr); clearTimeout(autoTmr); clearTimeout(pauseTmr);
-  curBlock=idx; playing=true; paused=false; queue=[];
-  txtOut.innerHTML='';
-  nextArr.classList.remove('show');
-  curEl.style.display='inline-block';
-  curEl.classList.add('on');
-
+  commitBlock(); clearPlaybackTimer(); clearEffects();
+  pendingStep=null; remainingMs=0;
+  curBlock=idx; currentBlockId=blocks[idx].id; playbackState='typing'; queue=[];
+  txtOut.innerHTML=''; nextArr.classList.remove('show');
+  curEl.style.display='inline-block'; curEl.classList.add('on');
   const b=blocks[idx];
   const spkTxt=((b.spk||$('char-name').value)||'').trim();
-  const showName=$('tog-name').checked;
-  if(spkTxt&&showName){ spkEl.textContent=spkTxt; spkEl.classList.add('show'); }
-  else spkEl.classList.remove('show');
-
-  setExpr(parseInt(b.expr)||1);
-  if($('tog-shake').checked) portImg.classList.add('talking');
-
-  const rawTxt = b.txt || '';
-  autoFitFont(rawTxt);
-  queue=parseScript(rawTxt);
-  updateButtons();
-  updateProgBar();
-  renderBlockList();
+  spkEl.textContent=spkTxt;
+  spkEl.classList.toggle('show',!!spkTxt&&$('tog-name').checked);
+  setExpr(Number(b.expr)||1);
+  portImg.classList.toggle('talking',$('tog-shake').checked);
+  autoFitFont(b.txt||''); queue=parseScript(b.txt||'');
+  updateButtons(); renderBlockList();
   setStatus(`Block ${idx+1}/${blocks.length} — Typing…`,'active');
   typeNext();
 }
-
-// Keep startScript as alias starting from block 0
-function startScript(){ startBlock(0); }
-
+function startScript(){
+  commitBlock();
+  if(playbackState==='paused'){pauseResume();return;}
+  startBlock(0);
+}
 function typeNext(){
-  if(!playing||paused) return;
-  if(!queue.length){ finishScript(); return; }
-
+  if(playbackState!=='typing') return;
+  if(!queue.length){finishScript();return;}
   const tok=queue.shift();
-
   if(tok.type==='event'){
     handleEvent(tok);
-    if(playing&&!paused) typeTmr=setTimeout(typeNext,0);
+    if(playbackState==='typing') scheduleStep(typeNext,0);
     return;
   }
-  txtOut.innerHTML+=tok.html;
+  txtOut.insertAdjacentHTML('beforeend',tok.html);
   if(tok.ch.trim()) playBlip();
   let d=getDelay();
   if(['.','!','?'].includes(tok.ch)) d*=4;
   else if([',',';',':'].includes(tok.ch)) d*=2.5;
   else if(tok.ch==='\n') d*=3;
-  typeTmr=setTimeout(typeNext,d);
+  scheduleStep(typeNext,d);
 }
-
 function handleEvent(tok){
-  if(tok.event==='flash'){ flashOv.style.opacity='1'; setTimeout(()=>flashOv.style.opacity='0',80); }
+  if(tok.event==='flash'){
+    flashOv.style.opacity='1'; effectTimeout(()=>flashOv.style.opacity='0',80);
+  }
   if(tok.event==='screenshake'){
     preview.classList.remove('shake'); void preview.offsetWidth;
-    preview.classList.add('shake'); setTimeout(()=>preview.classList.remove('shake'),320);
+    preview.classList.add('shake'); effectTimeout(()=>preview.classList.remove('shake'),320);
   }
   if(tok.event==='expr') setExpr(tok.arg);
-  if(tok.event==='pause'){
-    paused=true;
-    pauseTmr=setTimeout(()=>{ if(playing){paused=false;typeNext();} },tok.arg*1000);
+  if(tok.event==='pause' && tok.arg>0){
+    playbackState='script-wait';
+    setStatus(`Script pause: ${tok.arg}s…`,'active'); updateButtons();
+    scheduleStep(()=>{playbackState='typing';setStatus('Typing…','active');updateButtons();typeNext();},tok.arg*1000);
   }
 }
-
 function finishScript(){
-  playing=false;
-  curEl.classList.remove('on');
-  curEl.style.display='none';
-  nextArr.classList.add('show');
-  portImg.classList.remove('talking');
-  updateProgBar();
-
-  const b=blocks[curBlock];
-  const waitS=parseFloat(b.wait)||0;
-  const auto=$('autoAdv').checked;
-  const gDel=parseFloat($('autoAdv-sec').value)||2;
-
-  const hasNext = curBlock < blocks.length-1;
-
-  if(waitS>0){
-    // per-block wait then advance
-    setStatus(`Block ${curBlock+1} done. Next in ${waitS}s…`,'done');
-    autoTmr=setTimeout(()=>{ autoTmr=null; advanceBlock(); },waitS*1000);
-  } else if(auto && hasNext){
-    setStatus(`Auto-advancing in ${gDel}s…`,'done');
-    autoTmr=setTimeout(()=>{ autoTmr=null; advanceBlock(); },gDel*1000);
-  } else if(!hasNext){
-    // last block
-    if(auto){
-      const delay=waitS>0?waitS:gDel;
-      setStatus(`Done! Restarting in ${delay}s…`,'done');
-      autoTmr=setTimeout(()=>{ autoTmr=null; startBlock(0); },delay*1000);
-    } else {
-      setStatus('Done! Space to restart.','done');
-    }
+  clearPlaybackTimer(); pendingStep=null;
+  const idx=blocks.findIndex(b=>b.id===currentBlockId);
+  if(idx<0){stopAll();return;}
+  curBlock=idx; playbackState='ready';
+  curEl.classList.remove('on'); curEl.style.display='none';
+  nextArr.classList.add('show'); portImg.classList.remove('talking');
+  const b=blocks[idx], waitS=Number(b.wait)||0;
+  const auto=$('autoAdv').checked, hasNext=idx<blocks.length-1;
+  const delay=waitS>0?waitS:clampNumber($('autoAdv-sec').value,.5,15,2);
+  if(waitS>0 || auto){
+    playbackState='block-wait';
+    setStatus(`${hasNext?'Next block':'Restarting'} in ${delay}s…`,'done');
+    scheduleStep(advanceBlock,delay*1000);
   } else {
-    setStatus(`Block ${curBlock+1} done. Space → next block.`,'done');
+    if(!hasNext) playbackState='done';
+    setStatus(hasNext?`Block ${idx+1} done. Space → next block.`:'Done! Space to restart.','done');
   }
-  updateButtons();
+  updateProgBar(); updateButtons();
 }
-
 function advanceBlock(){
-  if(curBlock < blocks.length-1){
-    txtOut.innerHTML='';
-    nextArr.classList.remove('show');
-    startBlock(curBlock+1);
-  } else {
-    startBlock(0);
-  }
+  const idx=blocks.findIndex(b=>b.id===currentBlockId);
+  startBlock(idx>=0&&idx<blocks.length-1?idx+1:0);
 }
-
 function skipOrReplay(){
-  if(playing||paused){
-    // Skip to end of current block
-    clearTimeout(typeTmr); clearTimeout(pauseTmr);
-    paused=false;
-    // Apply remaining text instantly; keep any pending expression change so
-    // the portrait doesn't get stuck on a stale slot after a skip.
+  commitBlock();
+  if(['typing','script-wait'].includes(playbackState) ||
+    (playbackState==='paused' && resumeState!=='block-wait')){
+    clearPlaybackTimer(); pendingStep=null;
     queue.forEach(t=>{
-      if(t.type==='char') txtOut.innerHTML+=t.html;
-      else if(t.type==='event' && t.event==='expr') setExpr(t.arg);
+      if(t.type==='char') txtOut.insertAdjacentHTML('beforeend',t.html);
+      else if(t.event==='expr') setExpr(t.arg);
     });
     queue=[]; finishScript();
-  } else if(autoTmr){
-    // Cancel wait, go now
-    clearTimeout(autoTmr); autoTmr=null; advanceBlock();
-  } else if(nextArr.classList.contains('show')){
-    // Waiting for manual next — advance
-    txtOut.innerHTML='';
-    nextArr.classList.remove('show');
-    advanceBlock();
-  } else {
-    // Not started — start from block 0
-    startBlock(0);
-  }
+  } else if(['block-wait','ready','done','paused'].includes(playbackState)){
+    clearPlaybackTimer(); pendingStep=null; advanceBlock();
+  } else startBlock(0);
 }
-
 function stopAll(){
-  clearTimeout(typeTmr); clearTimeout(autoTmr); clearTimeout(pauseTmr);
-  playing=false; paused=false; queue=[];
+  clearPlaybackTimer(); clearEffects();
+  pendingStep=null; remainingMs=0; resumeState='typing';
+  playbackState='idle'; currentBlockId=null; curBlock=0; queue=[];
   curEl.classList.remove('on'); curEl.style.display='none'; nextArr.classList.remove('show');
   portImg.classList.remove('talking');
-  $('prog-fill').style.width='0%';
-  setStatus('Stopped.',''); updateButtons();
+  setStatus('Stopped.',''); updateProgBar(); updateButtons();
 }
-
 function pauseResume(){
-  if(!playing&&!paused) return;
-  if(paused){ paused=false; setStatus('Typing…','active'); typeNext(); }
-  else      { paused=true; clearTimeout(typeTmr); setStatus('Paused.',''); }
+  if(playbackState==='paused'){
+    playbackState=resumeState;
+    const step=pendingStep, delay=remainingMs;
+    setStatus(playbackState==='typing'?'Typing…':'Resumed wait…','active');
+    if(step) scheduleStep(step,delay);
+    else if(playbackState==='typing') typeNext();
+  } else if(isPlaybackActive()){
+    resumeState=playbackState;
+    remainingMs=playTimer===null?0:Math.max(0,deadline-performance.now());
+    clearPlaybackTimer(); playbackState='paused'; setStatus('Paused.','');
+  }
   updateButtons();
 }
-
 function updateButtons(){
-  const active=playing||paused;
-  $('btn-play').disabled =active&&!paused;
+  const active=isPlaybackActive();
+  $('btn-play').disabled=active&&playbackState!=='paused';
+  $('btn-play').textContent=playbackState==='paused'?'▶ Resume':'▶ Play';
   $('btn-pause').disabled=!active;
-  $('btn-stop').disabled =!active&&!autoTmr;
+  $('btn-pause').textContent=playbackState==='paused'?'▶':'⏸';
+  $('btn-pause').setAttribute('aria-label',playbackState==='paused'?'Resume':'Pause');
+  $('btn-stop').disabled=playbackState==='idle';
+  preview.classList.toggle('playback-paused',playbackState==='paused');
 }
 
 // ── PRESENTER MODE (fixed: scale preview IN PLACE via CSS transform) ──
@@ -1196,6 +1222,8 @@ let presScale=1;
 function enterPresenter(){
   presOn=true;
   $('presenter').classList.add('on');
+  $('presenter').classList.toggle('clean',$('tog-clean').checked);
+  document.activeElement.blur();
 
   function resize(){
     const vw=window.innerWidth, vh=window.innerHeight;
@@ -1241,6 +1269,10 @@ document.addEventListener('keydown',e=>{
   }
   if((e.key==='f'||e.key==='F')&&!inInput){ e.preventDefault(); presOn?exitPresenter():enterPresenter(); return; }
   if(inInput) return;
+  if(presOn && e.key.toLowerCase()==='h'){
+    $('tog-clean').checked=!$('tog-clean').checked; applyCleanView(); markChanged(); return;
+  }
+  if($('guide-modal').classList.contains('on')) return;
   if(e.code==='Space'){ e.preventDefault(); skipOrReplay(); }
   if(e.key==='p'||e.key==='P') pauseResume();
 });
@@ -1262,7 +1294,7 @@ $('btn-move-up').addEventListener('click', ()=>moveBlock(-1));
 $('btn-move-dn').addEventListener('click', ()=>moveBlock(1));
 
 // Click preview to advance (same as Space)
-$('preview').addEventListener('click', ()=>{ if(!presOn) skipOrReplay(); });
+$('preview').addEventListener('click', skipOrReplay);
 
 // ── LAYOUT TOGGLE LISTENERS ──
 $('tog-portrait').addEventListener('change',applyLayout);
@@ -1297,21 +1329,276 @@ $('btn-blip').addEventListener('click', ()=>{initAudio();playBlip();});
 
 // Background
 $('up-bg').addEventListener('change',function(e){
-  const f=e.target.files[0]; if(!f) return; bgImgUrl=URL.createObjectURL(f); applyBg();
+  const f=e.target.files[0]; if(!f) return; readImage(f,'background',url=>{bgImgUrl=url;applyBg();}); this.value='';
 });
 $('bg-col').addEventListener('input',applyBg);
-$('btn-clr-bg').addEventListener('click',()=>{bgImgUrl=null;$('up-bg').value='';applyBg();toast('Background cleared');});
+$('btn-clr-bg').addEventListener('click',()=>{imageReads.set('background',++imageReadId);bgImgUrl=null;markChanged();$('up-bg').value='';applyBg();toast('Background cleared');});
+
+// ── PROJECT FILES AND RECOVERY ──
+const projectControls = ['wave-sel','vol-sl','speed-sel','speed-sl','autoAdv','autoAdv-sec',
+  'char-name','name-col','tog-portrait','tog-name','tog-shake','tog-float','pos-x','pos-y',
+  'box-w','bar-h','font-sz','box-bdr','txt-col','box-bg','bg-col','blip-hz','blip-var','blip-ms','tog-clean'];
+const editorControls = ['script-txt','ed-spk','ed-expr','ed-wait'];
+const MAX_PROJECT_BYTES = 100 * 1024 * 1024;
+let projectRevision=0, fileRevision=0, recoveryRevision=0, recoveryTimer=null;
+let recoveryQueue=Promise.resolve(), recoveryDb=null, recoveryError='';
+let projectGeneration=0, imageReadId=0, loadingProject=false;
+const imageReads=new Map(), assetTasks=new Set();
+
+function clampNumber(value,min,max,fallback){
+  const n=typeof value==='string' && value.trim()===''?NaN:Number(value);
+  return Number.isFinite(n)?Math.min(max,Math.max(min,n)):fallback;
+}
+function updateSaveStatus(){
+  const pending=assetTasks.size>0;
+  let text;
+  if(pending) text='Reading image…';
+  else if(recoveryError) text='Recovery unavailable. Save Project to keep your work.';
+  else if(recoveryRevision!==projectRevision) text='Saving recovery…';
+  else if(fileRevision!==projectRevision) text='Saved in browser · project file has changes';
+  else text='Saved · edits also recover in this browser';
+  $('save-status').textContent=text;
+  $('save-status').classList.toggle('error',!!recoveryError);
+}
+function markChanged(){
+  projectRevision++; updateSaveStatus();
+  clearTimeout(recoveryTimer);
+  recoveryTimer=setTimeout(()=>{recoveryTimer=null;void saveRecovery();},300);
+}
+function captureProject(){
+  const settings={};
+  projectControls.forEach(id=>{
+    const el=$(id);
+    settings[id]=el.type==='checkbox'?el.checked:
+      ['number','range'].includes(el.type)?String(clampNumber(el.value===''?el.defaultValue:el.value,
+        Number(el.min),Number(el.max),Number(el.defaultValue))):el.value;
+  });
+  return {format:'dialogue-animator',version:1,
+    blocks:blocks.map(b=>({...b})),settings,
+    assets:{background:bgImgUrl,expressions:{...expr}},activeExpression:activeExpr};
+}
+function validImageData(value){
+  return value===null || (typeof value==='string' &&
+    /^data:image\/(?:png|jpeg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/.test(value));
+}
+function validateProject(data){
+  if(!data || data.format!=='dialogue-animator' || data.version!==1 ||
+    !Array.isArray(data.blocks) || data.blocks.length<1 || data.blocks.length>5000)
+    throw new Error('Unsupported or invalid Dialogue Animator project.');
+  const ids=new Set();
+  const cleanBlocks=data.blocks.map(b=>{
+    if(!b || typeof b.txt!=='string' || typeof b.spk!=='string' ||
+      b.txt.length>1000000 || b.spk.length>10000 || !/^[1-4]$/.test(String(b.expr)) ||
+      typeof b.wait!=='number' || !Number.isFinite(b.wait) || b.wait<0 || b.wait>30)
+      throw new Error('The project contains an invalid dialogue block.');
+    let id=typeof b.id==='string' && b.id.length<=100 ? b.id : blockId();
+    if(ids.has(id)) id=blockId(); ids.add(id);
+    return {id,txt:b.txt,spk:b.spk,expr:String(b.expr),wait:b.wait};
+  });
+  if(!data.settings || typeof data.settings!=='object' || !data.assets ||
+    !data.assets.expressions || !validImageData(data.assets.background))
+    throw new Error('The project settings or images are invalid.');
+  const expressions={};
+  for(let i=1;i<=4;i++){
+    if(!validImageData(data.assets.expressions[i])) throw new Error('Invalid expression image.');
+    expressions[i]=data.assets.expressions[i];
+  }
+  const settings={};
+  for(const id of projectControls){
+    const el=$(id), value=data.settings[id];
+    if(el.type==='checkbox'){
+      if(typeof value!=='boolean') throw new Error('Invalid project toggle: '+id);
+    } else {
+      if(typeof value!=='string') throw new Error('Invalid project setting: '+id);
+      if(el.tagName==='SELECT' && !Array.from(el.options).some(o=>o.value===value))
+        throw new Error('Invalid project option: '+id);
+      if(el.type==='color' && !/^#[0-9a-f]{6}$/i.test(value)) throw new Error('Invalid color: '+id);
+      if(['number','range'].includes(el.type) &&
+        (value.trim()==='' || !Number.isFinite(Number(value)) || Number(value)<Number(el.min) || Number(value)>Number(el.max)))
+        throw new Error('Invalid numeric setting: '+id);
+      if(value.length>10000) throw new Error('Project setting is too long.');
+    }
+    settings[id]=value;
+  }
+  return {format:'dialogue-animator',version:1,blocks:cleanBlocks,settings,
+    assets:{background:data.assets.background,expressions},
+    activeExpression:clampNumber(data.activeExpression,1,4,1)|0};
+}
+function applyProject(data){
+  const clean=validateProject(data); // Validate everything before replacing current work.
+  stopAll(); projectGeneration++; imageReads.clear();
+  blocks=clean.blocks; bgImgUrl=clean.assets.background;
+  Object.assign(expr,clean.assets.expressions);
+  projectControls.forEach(id=>{
+    const el=$(id); if(el.type==='checkbox') el.checked=clean.settings[id]; else el.value=clean.settings[id];
+  });
+  const custom=$('speed-sel').value==='0';
+  $('speed-sl').style.display=$('speed-disp').style.display=custom?'inline-block':'none';
+  $('speed-disp').textContent=$('speed-sl').value;
+  loadBlockEditor(0); buildExprGrid(); setExpr(clean.activeExpression);
+  applyLayout(); applyBg(); applyCleanView(); updateButtons();
+}
+function openRecoveryDb(){
+  if(recoveryDb) return Promise.resolve(recoveryDb);
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    const timeout=setTimeout(()=>{settled=true;reject(new Error('Recovery storage timed out.'));},5000);
+    let req;
+    try { req=indexedDB.open('dialogue-animator',1); }
+    catch(error){clearTimeout(timeout);reject(error);return;}
+    req.onupgradeneeded=()=>{req.result.createObjectStore('projects');};
+    req.onerror=()=>{if(!settled){settled=true;clearTimeout(timeout);reject(req.error);}};
+    req.onblocked=()=>{if(!settled){settled=true;clearTimeout(timeout);reject(new Error('Recovery storage is blocked.'));}};
+    req.onsuccess=()=>{
+      if(settled){req.result.close();return;}
+      settled=true;clearTimeout(timeout);recoveryDb=req.result;
+      recoveryDb.onversionchange=()=>{recoveryDb.close();recoveryDb=null;};
+      resolve(recoveryDb);
+    };
+  });
+}
+async function recoveryStore(mode,value){
+  const db=await openRecoveryDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('projects',mode), store=tx.objectStore('projects');
+    const req=mode==='readonly'?store.get('recovery'):store.put(value,'recovery');
+    tx.oncomplete=()=>resolve(req.result);
+    tx.onerror=()=>reject(tx.error||req.error||new Error('Recovery storage failed.'));
+    tx.onabort=()=>reject(tx.error||new Error('Recovery storage was interrupted.'));
+  });
+}
+async function saveRecovery(){
+  clearTimeout(recoveryTimer); recoveryTimer=null;
+  const revision=projectRevision, snapshot=captureProject();
+  const operation=recoveryQueue.catch(()=>{}).then(()=>recoveryStore('readwrite',snapshot));
+  recoveryQueue=operation;
+  try {
+    await operation;
+    recoveryRevision=revision; recoveryError='';
+  } catch(error){recoveryError=error.message||'Recovery failed.';}
+  updateSaveStatus();
+}
+function lockProjectControls(lock){
+  if(lock){
+    document.querySelectorAll('button,input,textarea,select').forEach(el=>{
+      el.dataset.preLoadDisabled=String(el.disabled);el.disabled=true;
+    });
+  } else {
+    document.querySelectorAll('button,input,textarea,select').forEach(el=>{
+      el.disabled=el.dataset.preLoadDisabled==='true';delete el.dataset.preLoadDisabled;
+    });
+    updateButtons();
+  }
+}
+async function restoreRecovery(){
+  loadingProject=true; lockProjectControls(true);
+  $('save-status').textContent='Checking recovery…';
+  try {
+    const saved=await recoveryStore('readonly');
+    if(saved){
+      applyProject(saved); projectRevision=1; recoveryRevision=1; fileRevision=0;
+      toast('Recovered your last project from this browser.');
+    }
+  } catch(error){recoveryError=error.message||'Recovery is unavailable.';}
+  finally {loadingProject=false;lockProjectControls(false);updateSaveStatus();}
+}
+async function readImage(file,key,apply){
+  const readId=++imageReadId, generation=projectGeneration;
+  imageReads.set(key,readId);
+  const task=(async()=>{
+    if(file.size>25*1024*1024) throw new Error('Image exceeds 25 MB. Choose a smaller image.');
+    const url=await new Promise((resolve,reject)=>{
+      const reader=new FileReader();reader.onload=()=>resolve(reader.result);
+      reader.onerror=()=>reject(new Error('Could not read the image.'));reader.readAsDataURL(file);
+    });
+    if(!validImageData(url)) throw new Error('Choose a supported image file.');
+    await new Promise((resolve,reject)=>{
+      const image=new Image();image.onload=resolve;image.onerror=()=>reject(new Error('Could not decode the image.'));image.src=url;
+    });
+    if(generation===projectGeneration && imageReads.get(key)===readId){apply(url);markChanged();}
+  })();
+  assetTasks.add(task);updateSaveStatus();
+  try {await task;}
+  catch(error){toast(error.message,3500);}
+  finally {assetTasks.delete(task);updateSaveStatus();}
+}
+async function saveProjectFile(){
+  $('btn-save-project').disabled=true;
+  try {
+    // Wait for uploads so the downloaded project cannot silently omit an image.
+    while(assetTasks.size) await Promise.allSettled([...assetTasks]);
+    commitBlock();
+    const revision=projectRevision, json=JSON.stringify(captureProject(),null,2);
+    const blob=new Blob([json],{type:'application/json'});
+    if(blob.size>MAX_PROJECT_BYTES) throw new Error('Project exceeds 100 MB. Reduce image sizes before saving.');
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a'); link.href=url;link.download='dialogue-project.json';
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    fileRevision=revision;
+    await saveRecovery();
+    toast('Project download started. Keep the JSON file to reopen your project.');
+  } catch(error){toast('Could not save project: '+error.message,4000);}
+  finally {$('btn-save-project').disabled=false;updateSaveStatus();}
+}
+async function openProjectFile(file){
+  if(!file) return;
+  if(file.size>MAX_PROJECT_BYTES){toast('Project exceeds 100 MB.',3500);return;}
+  // Freeze the editor while reading, so late edits cannot be overwritten.
+  loadingProject=true;lockProjectControls(true);
+  try {
+    const data=validateProject(JSON.parse(await file.text()));
+    if((fileRevision!==projectRevision || assetTasks.size) &&
+      !window.confirm('Open this project and replace your current work? Save Project first to keep a separate copy.')) return;
+    applyProject(data);projectRevision++;fileRevision=projectRevision;
+    await saveRecovery();toast('Project opened.');
+  } catch(error){toast('Could not open project: '+error.message,4500);}
+  finally {loadingProject=false;lockProjectControls(false);$('open-project').value='';updateSaveStatus();}
+}
+function applyCleanView(){ $('presenter').classList.toggle('clean',$('tog-clean').checked); }
+$('btn-save-project').addEventListener('click',saveProjectFile);
+$('btn-load-project').addEventListener('click',()=>$('open-project').click());
+$('open-project').addEventListener('change',e=>{void openProjectFile(e.target.files[0]);});
+$('tog-clean').addEventListener('change',applyCleanView);
+editorControls.forEach(id=>{
+  $(id).addEventListener('input',()=>{commitBlock();renderBlockList();updateEstTime();});
+  $(id).addEventListener('change',()=>{commitBlock();renderBlockList();updateEstTime();});
+});
+projectControls.forEach(id=>{
+  $(id).addEventListener('input',()=>{
+    const el=$(id);
+    // Number inputs can temporarily be blank while the user replaces a value.
+    if(el.type==='number' && (!el.validity.valid || el.value==='')) return;
+    markChanged();
+  });
+  $(id).addEventListener('change',()=>{
+    const el=$(id);
+    if(el.type==='number'){
+      el.value=String(clampNumber(el.value,Number(el.min),Number(el.max),Number(el.defaultValue)));
+      if(id==='bar-h'||id==='font-sz') applyBoxStyle();
+    }
+    markChanged();
+  });
+});
+window.addEventListener('pagehide',()=>{commitBlock();if(projectRevision!==recoveryRevision)void saveRecovery();});
+window.addEventListener('beforeunload',e=>{
+  commitBlock();
+  if(assetTasks.size || (projectRevision!==recoveryRevision && fileRevision!==projectRevision)){
+    e.preventDefault();e.returnValue='';
+  }
+});
 
 // ── INIT ──
 buildExprGrid();
 renderBlockList();
-selectBlock(0);
+loadBlockEditor(0);
 applyLayout();
 applyBoxStyle();
 applyBg();
 updateButtons();
 updateEstTime();
 setStatus('Ready. Press ▶ Play or Space to start.','');
+restoreRecovery();
 </script>
 </body>
 </html>
